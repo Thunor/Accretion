@@ -112,22 +112,62 @@ extension SpectralClass {
     }
 }
 
-extension StarSystem: Identifiable {
-    var id: UInt64 { seed }
-
+extension PlanetHost {
     /// Habitable zone: from the runaway-greenhouse limit out to Kasting's
     /// outer edge (1.37 AU for the sun), scaled by luminosity.
     var habitableZone: ClosedRange<Double> {
         greenhouseRadius...(1.37 * ecosphereRadius)
     }
+}
+
+/// Stars drawn on the axis of a focused host: their distance from it, and the hosts
+/// whose planets are shown collapsed beside them.
+struct NeighborStars {
+    var starIndices: [Int]
+    var a: Double
+    var e: Double
+    var hostIndices: [Int]
+}
+
+extension StarSystem: Identifiable {
+    var id: UInt64 { seed }
 
     var configurationLabel: String {
-        switch (orbitType, companions.count) {
-        case (.single, _): "single"
-        case (.circumstellar, 1): "binary, S-type planets"
+        let multiplicity = switch (orbitType, companions.count) {
+        case (_, 0): "single"
         case (.circumbinary, 1): "close binary, circumbinary planets"
-        case (.circumstellar, _): "triple, S-type planets"
         case (.circumbinary, _): "triple, circumbinary planets"
+        case (_, 1): "binary"
+        default: "triple"
+        }
+        let withPlanets = hosts.filter { !$0.planets.isEmpty }.count
+        return withPlanets > 1 ? "\(multiplicity), \(withPlanets) planetary systems" : multiplicity
+    }
+
+    /// The other stars as seen from a host, placed at their separation from it.
+    /// Seen from the outer star of a triple, the inner pair is one group at the outer orbit.
+    func neighbors(ofHost hostIndex: Int) -> [NeighborStars] {
+        let focus = hosts[hostIndex].starIndices
+        var groups: [(stars: [Int], a: Double, e: Double)] = []
+        if focus.contains(0) {
+            // Primary (or close pair): each companion not in the host at its own orbit.
+            for (offset, companion) in companions.enumerated() where !focus.contains(offset + 1) {
+                groups.append(([offset + 1], companion.a, companion.e))
+            }
+        } else if focus == [1] {
+            groups.append(([0], companions[0].a, companions[0].e))
+            if companions.count > 1 { groups.append(([2], companions[1].a, companions[1].e)) }
+        } else if focus == [2] {
+            groups.append(([0, 1], companions[1].a, companions[1].e))
+        }
+        return groups.map { group in
+            var hostIndices: [Int] = []
+            for star in group.stars {
+                if let index = self.hostIndex(ofStar: star), !hostIndices.contains(index) {
+                    hostIndices.append(index)
+                }
+            }
+            return NeighborStars(starIndices: group.stars, a: group.a, e: group.e, hostIndices: hostIndices)
         }
     }
 }

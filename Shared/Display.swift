@@ -27,26 +27,36 @@ extension StarSystem {
             line("   Orbits %@: a = %.4g AU, e = %.3f, period = %.4g days",
                  c.orbitsInnerPair ? "the inner pair" : "the primary", c.a, c.e, c.period)
         }
-        switch orbitType {
-        case .single:
-            break
-        case .circumstellar:
-            line("Planets orbit the primary (S-type), stable inside %.3g AU", stableOuterLimit ?? 0)
-        case .circumbinary:
-            line("Planets orbit the inner pair (P-type), stable beyond %.3g AU", stableInnerLimit ?? 0)
-            if let outer = stableOuterLimit { line("   and inside %.3g AU", outer) }
-        }
-        line("Mass of central star(s) (in solar masses): %4.2f", stellarMass)
-        line("Luminosity of central star(s) (relative to the sun): %5.2f", stellarLuminosity)
         line("Total main sequence lifetime (in million yrs): %10.3f", mainSequenceLife / 1.0e6)
         line("Current age of stellar system (in million yrs): %10.3f", age / 1.0e6)
-        line("Radius of habitable ecosphere (AU): %3.3f", ecosphereRadius)
 
+        for host in hosts {
+            let names = stars(of: host).map(\.designation).joined(separator: " + ")
+            line("")
+            switch host.orbitType {
+            case .single:
+                line("PLANETS OF %@", names)
+            case .circumstellar:
+                line("PLANETS OF %@ (S-type), stable inside %.3g AU", names, host.stableOuterLimit ?? 0)
+            case .circumbinary:
+                line("PLANETS OF %@ (P-type), stable beyond %.3g AU", names, host.stableInnerLimit ?? 0)
+                if let outer = host.stableOuterLimit { line("   and inside %.3g AU", outer) }
+            }
+            line("Mass of central star(s) (in solar masses): %4.2f", host.mass)
+            line("Luminosity of central star(s) (relative to the sun): %5.4g", host.luminosity)
+            line("Radius of habitable ecosphere (AU): %3.3f", host.ecosphereRadius)
+            if host.planets.isEmpty { line("No planets formed.") }
+            reportPlanets(host.planets, line: line)
+        }
+        return out
+    }
+
+    private func reportPlanets(_ planets: [Planet], line: (String, CVarArg...) -> Void) {
         for (index, p) in planets.enumerated() {
             line("Planet #%ld:", index + 1)
             if p.isGasGiant { line("Gas giant...") }
             if p.resonantPeriod { line("In resonant period with primary.") }
-            line("   Distance from primary star (in A.U.): %7.3f", p.a)
+            line("   Distance from its star(s) (in A.U.): %7.3f", p.a)
             line("   Eccentricity of orbit: %5.3f", p.e)
             line("   Mass (in Earth masses): %7.3f", p.mass * Const.earthMassesPerSolarMass)
             line("   Equatorial radius (in Km): %10.1f", p.radius)
@@ -71,6 +81,5 @@ extension StarSystem {
             line("   Length of year (in days): %7.2f", p.orbitalPeriod)
             line("   Length of day (in hours): %7.2f", p.day)
         }
-        return out
     }
 }

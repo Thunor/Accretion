@@ -144,39 +144,49 @@ struct Companion {
     var apastron: Double { a * (1.0 + e) }
 }
 
-/// Where the planets orbit in a multiple-star system.
+/// Where a host's planets orbit in a multiple-star system.
 enum PlanetOrbitType {
     case single                         // lone star
-    case circumstellar                  // S-type: around the primary, inside the companion's orbit
+    case circumstellar                  // S-type: around one star, inside its companion's orbit
     case circumbinary                   // P-type: around the close inner pair
+}
+
+/// A star (or close pair) and the planets that formed around it.
+struct PlanetHost {
+    var starIndices: [Int]              // into `StarSystem.stars`: 0 primary, 1 and 2 companions
+    var orbitType: PlanetOrbitType
+    var stableInnerLimit: Double?       // P-type: no stable orbits inside this (AU)
+    var stableOuterLimit: Double?       // S-type / triple: no stable orbits outside this (AU)
+    var mass: Double                    // solar masses (both stars if circumbinary)
+    var luminosity: Double              // relative to the sun
+    var ecosphereRadius: Double         // AU
+    var greenhouseRadius: Double        // AU
+    var planets: [Planet]
 }
 
 struct StarSystem {
     var seed: UInt64
     var primary: Star
     var companions: [Companion]
-    var orbitType: PlanetOrbitType
-    var stableInnerLimit: Double?       // P-type: no stable orbits inside this (AU)
-    var stableOuterLimit: Double?       // S-type / triple: no stable orbits outside this (AU)
-    var stellarMass: Double             // planet host, solar masses (both stars if circumbinary)
-    var stellarLuminosity: Double       // planet host, relative to the sun
     var mainSequenceLife: Double        // years (of the primary, the shortest-lived star)
     var age: Double                     // years
-    var ecosphereRadius: Double         // AU
-    var greenhouseRadius: Double        // AU
-    var planets: [Planet]
+    /// The primary's (or close pair's) planets first, then any companion with room for its own.
+    var hosts: [PlanetHost]
 
     var stars: [Star] { [primary] + companions.map(\.star) }
 
-    /// The star(s) the planets orbit.
-    var hostStars: [Star] {
-        orbitType == .circumbinary ? [primary, companions[0].star] : [primary]
+    func stars(of host: PlanetHost) -> [Star] { host.starIndices.map { stars[$0] } }
+
+    /// The host a star belongs to, if it has a planetary zone.
+    func hostIndex(ofStar index: Int) -> Int? {
+        hosts.firstIndex { $0.starIndices.contains(index) }
     }
 
-    /// Companions that are not part of the planet host.
-    var outerCompanions: [Companion] {
-        orbitType == .circumbinary ? Array(companions.dropFirst()) : companions
-    }
+    // The primary host, which every system has.
+    var primaryHost: PlanetHost { hosts[0] }
+    var orbitType: PlanetOrbitType { primaryHost.orbitType }
+    var planets: [Planet] { primaryHost.planets }
+    var hostStars: [Star] { stars(of: primaryHost) }
 }
 
 /// Small seedable RNG so a system can be regenerated from its seed.

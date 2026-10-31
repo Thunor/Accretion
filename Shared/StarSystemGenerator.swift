@@ -41,9 +41,28 @@ final class StarSystemGenerator {
     func generate() -> StarSystem {
         let primary = randomPrimary()
         let companions = randomCompanions(for: primary)
-        let layout = planetLayout(primary: primary, companions: companions)
-        stellarMassRatio = layout.hostMass
-        stellarLuminosityRatio = layout.hostLuminosity
+
+        // The primary is the most massive, shortest-lived star, so it sets the age.
+        mainSeqLife = 1.0e10 * (primary.mass / primary.luminosity)
+        age = mainSeqLife >= 6.0e9 ? randomNumber(1.0e9, 6.0e9)
+            : randomNumber(min(1.0e9, 0.1 * mainSeqLife), mainSeqLife)
+
+        let hosts = planetHostLayouts(primary: primary, companions: companions).map(makeHost)
+        return StarSystem(seed: seed,
+                          primary: primary,
+                          companions: companions,
+                          mainSequenceLife: mainSeqLife,
+                          age: age,
+                          hosts: hosts)
+    }
+
+    /// Accretes and finishes the planets of one host. The generator's stellar state is
+    /// switched to that host first, since the accretion and environment code reads it.
+    func makeHost(_ layout: HostLayout) -> PlanetHost {
+        stellarMassRatio = layout.mass
+        stellarLuminosityRatio = layout.luminosity
+        rEcosphere = sqrt(stellarLuminosityRatio)
+        rGreenhouse = rEcosphere * Const.greenhouseEffectConst
 
         // Clear the disk inside a circumbinary stability limit and truncate it outside
         // a companion's, so planets only form on stable orbits.
@@ -55,29 +74,17 @@ final class StarSystemGenerator {
             innerBound: max(innermostPlanet(stellarMassRatio, luminosity: stellarLuminosityRatio), innerLimit),
             outerBound: min(outermostPlanet(stellarMassRatio), outerLimit))
 
-        // The primary is the most massive, shortest-lived star, so it sets the age.
-        mainSeqLife = 1.0e10 * (primary.mass / primary.luminosity)
-        age = mainSeqLife >= 6.0e9 ? randomNumber(1.0e9, 6.0e9)
-            : randomNumber(min(1.0e9, 0.1 * mainSeqLife), mainSeqLife)
-        rEcosphere = sqrt(stellarLuminosityRatio)
-        rGreenhouse = rEcosphere * Const.greenhouseEffectConst
-
         let finished = bodies.map { planet -> Planet in
             var p = planet
             computeEnvironment(&p)
             return p
         }
-
-        return StarSystem(seed: seed,
-                          primary: primary,
-                          companions: companions,
+        return PlanetHost(starIndices: layout.starIndices,
                           orbitType: layout.type,
                           stableInnerLimit: layout.innerLimit,
                           stableOuterLimit: layout.outerLimit,
-                          stellarMass: stellarMassRatio,
-                          stellarLuminosity: stellarLuminosityRatio,
-                          mainSequenceLife: mainSeqLife,
-                          age: age,
+                          mass: stellarMassRatio,
+                          luminosity: stellarLuminosityRatio,
                           ecosphereRadius: rEcosphere,
                           greenhouseRadius: rGreenhouse,
                           planets: finished)

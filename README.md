@@ -25,7 +25,7 @@ The project has two targets that share one generator:
 | `Shared/Constants.swift` | Physical constants (`CONST.H`) |
 | `Shared/Display.swift` | Text report (`DISPLAY.C`) |
 | `Accretion/main.swift` | CLI entry point |
-| `AccretionApp/` | SwiftUI app: `ContentView`, `SystemRow`, `PlanetKind`, `SystemCatalog` |
+| `AccretionApp/` | SwiftUI app: `ContentView`, `SystemRow`, `PlanetDetailView`, `PlanetKind`, `SystemCatalog` |
 
 The `Shared` folder is a synchronized folder with membership in both targets. New generator files
 added there are picked up by the CLI and the app automatically.
@@ -39,8 +39,9 @@ Accretion [-v] [-s <seed>] [-o <file>]
   -o  output file (default: New.System in the current directory)
 ```
 
-The report lists the seed, every star (designation, mass, luminosity, radius, temperature),
-each companion's orbit, where planets may orbit, and every planet's physical properties.
+The report lists the seed, every star (designation, mass, luminosity, radius, temperature) and
+each companion's orbit. Then, for each star (or close pair) with planets, a "PLANETS OF …"
+section gives its stable zone, habitable ecosphere and every planet's physical properties.
 A seed always regenerates the same system, as long as the generator code is unchanged.
 
 ## The app
@@ -65,6 +66,46 @@ Each row shows one system:
   the right edge; the label shows the real distance.
 - **Caption:** star designations, configuration (single, S-type binary, circumbinary, triple),
   host mass and luminosity, body count and seed. The seed can be passed to the CLI with `-s`.
+
+### Companion stars' planets
+
+Companions with their own planets show them collapsed in a short strip next to the star: tiny dots
+in planet-type colors, spread over that star's own range of distances.
+
+- **Expand a companion:** click the companion or its strip. Its planets, habitable zone and
+  stability limit take over the row, measured from that star. The caption starts with
+  "Planets of M4V" (or whichever star is in focus).
+- **Collapse the primary:** the primary (or close pair) moves to its separation on the axis,
+  with its planets collapsed into a strip.
+- **From the third star of a triple:** the inner pair appears as one group at the outer orbit.
+  Clicking it returns to the primary.
+- **Return:** click the star in the left column, or the primary's strip.
+
+The change crossfades over a quarter of a second, and each row keeps its own focus. Planet selection and
+the details panel work the same for every star, and the panel's "Orbits" row names the star.
+
+### Planet details
+
+Click any planet or planetoid belt to open its details in an inspector panel on the right of the
+window. The selected body gets a white ring in its row. Clicking another body switches the panel
+to it, and the panel stays open while you scroll. Close it with the × button or Escape;
+generating a new batch also closes it.
+
+Clicks are matched against the same layout used for drawing (`OrbitTrack.frame(of:in:)`), and
+small bodies get a hit area at least 14 points across so they stay easy to click. If bodies
+overlap, the one nearest the click wins.
+
+The panel shows:
+
+| Section | Values |
+|---|---|
+| Header | Planet number, type, seed, and badges for "In habitable zone", "Runaway greenhouse" and "Spin–orbit resonance" |
+| Orbit | Host star(s), distance, eccentricity, year, day, axial tilt |
+| Body | Mass, radius (km and Earth radii), density, escape velocity, lightest gas retained, albedo |
+| Surface | Gravity, pressure, temperature, water boiling point, hydrosphere, cloud and ice cover (rocky bodies only) |
+
+An inspector was chosen over a popover. A macOS popover closes whenever the app loses focus,
+and an inspector also lets you compare planets while scrolling.
 
 Star sizes use a cube-root scale (`28 × R^⅓` points, capped at 60). Radii span about 0.1 to 14 solar
 radii, so a linear scale would make red dwarfs invisible or O stars overflow the row. Stars stay
@@ -170,8 +211,32 @@ Planets only form where orbits are dynamically stable, using Holman & Wiegert (1
 - **Triples:** the third star also trims the outer edge.
 
 The dust disk is cleared inside a P-type limit and cut off outside an S-type limit, and
-protoplanets are only injected in the remaining stable band. If no band is left, the system has
-no planets. Planets don't form around distant companions.
+protoplanets are only injected in the remaining stable band. If no band is left, that star gets
+no planets.
+
+### Planets around companion stars
+
+Every star that has room gets its own planetary system (`planetHostLayouts` in `Shared/Stars.swift`).
+Each one is a `PlanetHost` in `StarSystem.hosts`, and the primary's (or close pair's) system is always first.
+
+| Star | Disturbed by | Outer stability limit |
+|---|---|---|
+| Primary of a wide pair | Partner (and any third star) | S-type, μ = partner's share of the pair's mass |
+| Partner of a wide pair | Primary (and any third star) | S-type, μ = primary's share of the pair's mass |
+| Close pair, planets around both | Third star, if any | P-type inner limit, plus an S-type outer limit from the third star |
+| Third star of a triple | The inner pair as one mass | S-type, μ = pair mass / total mass, using the outer orbit |
+
+A companion only gets a planetary system when its stable zone extends past twice its innermost
+planet orbit, the same test used to choose between S-type and P-type. Each system is accreted
+separately, with that star's own mass, luminosity and habitable zone. Light from the other stars
+isn't added.
+
+Seed 1008 is an example: three M dwarfs, with a 77 AU inner pair (e = 0.15) and a third star at 866 AU
+(e = 0.54). The primary is stable inside 17.7 AU, its partner inside 17.1 AU, and the third star
+inside 73.3 AU.
+
+Over 2000 seeds, 544 of the 611 multiple-star systems have more than one planetary system: 402 with two and 142
+with three. The rest are mostly close pairs whose planets orbit both stars.
 
 **Innermost orbit:** the smaller of Dole's 0.3·M^⅓ AU and 0.5·√L AU. Sun-like stars keep about
 0.3 AU. Red dwarfs get close-in planets as observed for TRAPPIST-1 (0.011–0.06 AU) and Proxima b
@@ -261,11 +326,15 @@ age-based cooling model rather than the main-sequence relations used here.
 
 ## Known limitations
 
-- Planets only form around the primary or a close pair, never around distant companions.
-- Starlight from a distant companion isn't added to an S-type planet's heating.
+- Starlight from other stars isn't added to a planet's heating; each planetary system only sees its own star(s).
+- Seen from the third star, a wide inner pair is drawn as one group at the outer orbit, so the
+  partner's planets are reached through the primary.
+- A row's focus resets to the primary if the row scrolls far out of view and is rebuilt.
 - Moons are not generated (a stub in the original).
-- The Xcode preview for `ContentView` crashes inside SwiftUI before any app code runs. It looks
-  like a preview problem; the app itself runs fine.
+- Xcode previews crash for this project (`ContentView` and a test preview of `PlanetDetailView`)
+  with a null-pointer crash inside the preview runtime. It looks like a preview problem; the app
+  itself runs fine.
+- Companion stars and host stars can't be clicked for details yet; only planets and belts can.
 
 ## Change history
 
@@ -277,3 +346,6 @@ age-based cooling model rather than the main-sequence relations used here.
 5. Corrected O-star luminosity and radius; fixed the legend labels.
 6. Relaxed the innermost planet orbit for red dwarfs; switched to realistic class frequencies
    with matching mass ranges.
+7. Click a planet or belt to see its details in an inspector panel.
+8. Planets around the second and third stars when spacing allows; click a companion to expand its
+   planets and collapse the primary's. The CLI report lists each star's planets.

@@ -7,9 +7,17 @@
 
 import SwiftUI
 
+/// A planet picked by clicking it in a row.
+struct PlanetReference: Equatable {
+    let systemID: StarSystem.ID
+    let host: Int
+    let index: Int
+}
+
 struct ContentView: View {
     @State private var catalog = SystemCatalog()
     @State private var count = 10
+    @State private var selectedPlanet: PlanetReference?
 
     private let counts = [1, 10, 100, 1000]
 
@@ -19,7 +27,13 @@ struct ContentView: View {
                 LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
                     Section {
                         ForEach(catalog.systems) { system in
-                            SystemRow(system: system)
+                            SystemRow(system: system,
+                                      selectedPlanet: selectedPlanet?.systemID == system.id
+                                          ? selectedPlanet : nil,
+                                      onSelectPlanet: { host, index in
+                                          selectedPlanet = PlanetReference(systemID: system.id,
+                                                                           host: host, index: index)
+                                      })
                             Divider().opacity(0.4)
                         }
                     } header: {
@@ -45,6 +59,8 @@ struct ContentView: View {
                     Text("\(catalog.systems.count) systems in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .layoutPriority(1)
                 }
             }
             .padding(.horizontal)
@@ -60,11 +76,27 @@ struct ContentView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Generate", systemImage: "sparkles") {
+                    selectedPlanet = nil
                     Task { await catalog.generate(count: count) }
                 }
                 .disabled(catalog.isGenerating)
                 .keyboardShortcut("g")
             }
+        }
+        .inspector(isPresented: Binding(get: { selectedPlanet != nil },
+                                        set: { if !$0 { selectedPlanet = nil } })) {
+            ScrollView {
+                if let reference = selectedPlanet,
+                   let system = catalog.systems.first(where: { $0.id == reference.systemID }),
+                   system.hosts.indices.contains(reference.host),
+                   system.hosts[reference.host].planets.indices.contains(reference.index) {
+                    let host = system.hosts[reference.host]
+                    PlanetDetailView(planet: host.planets[reference.index],
+                                     number: reference.index + 1, host: host, system: system,
+                                     onClose: { selectedPlanet = nil })
+                }
+            }
+            .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
         }
         .navigationTitle("Accretion")
         .preferredColorScheme(.dark)

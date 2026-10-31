@@ -125,30 +125,69 @@ extension StarSystemGenerator {
         2.8 * pow(1.0 + qOut, 0.4) * pow(1.0 + eOut, 0.4) * pow(1.0 - eOut, -0.2) * innerA
     }
 
-    /// Decides what the planets orbit and the band of stable orbits they may form in.
-    func planetLayout(primary: Star, companions: [Companion])
-        -> (type: PlanetOrbitType, hostMass: Double, hostLuminosity: Double,
-            innerLimit: Double?, outerLimit: Double?) {
+    /// Decides which stars can host planets and the stable band around each. The primary
+    /// (or close pair) always comes first; companions are added only when the other stars
+    /// leave them a zone wider than twice their innermost planet orbit.
+    func planetHostLayouts(primary: Star, companions: [Companion]) -> [HostLayout] {
         guard let partner = companions.first else {
-            return (.single, primary.mass, primary.luminosity, nil, nil)
+            return [HostLayout(starIndices: [0], type: .single, mass: primary.mass,
+                               luminosity: primary.luminosity, innerLimit: nil, outerLimit: nil)]
+        }
+
+        func hasRoom(_ star: Star, outerLimit: Double) -> Bool {
+            outerLimit > 2.0 * innermostPlanet(star.mass, luminosity: star.luminosity)
         }
 
         let pairMass = primary.mass + partner.star.mass
-        let sLimit = sTypeCriticalRatio(mu: partner.star.mass / pairMass, e: partner.e) * partner.a
-        // A tertiary orbits the pair's barycenter; treat it as perturbing the host from there.
+        let tertiary = companions.dropFirst().first
+        // A tertiary orbits the pair's barycenter; treat it as perturbing a host from there.
         func tertiaryLimit(hostMass: Double) -> Double? {
-            guard let outer = companions.dropFirst().first else { return nil }
+            guard let outer = tertiary else { return nil }
             return sTypeCriticalRatio(mu: outer.star.mass / (hostMass + outer.star.mass), e: outer.e) * outer.a
         }
-
-        // Prefer circumstellar planets when there is room inside the companion's orbit.
-        if sLimit > 2.0 * innermostPlanet(primary.mass, luminosity: primary.luminosity) {
-            let limits = [sLimit, tertiaryLimit(hostMass: primary.mass)].compactMap { $0 }
-            return (.circumstellar, primary.mass, primary.luminosity, nil, limits.min())
+        // One star of the inner pair, perturbed by the other (and by any tertiary).
+        func circumstellar(_ index: Int, _ star: Star, perturberMass: Double) -> HostLayout {
+            let sLimit = sTypeCriticalRatio(mu: perturberMass / pairMass, e: partner.e) * partner.a
+            let outer = [sLimit, tertiaryLimit(hostMass: star.mass)].compactMap { $0 }.min()
+            return HostLayout(starIndices: [index], type: .circumstellar, mass: star.mass,
+                              luminosity: star.luminosity, innerLimit: nil, outerLimit: outer)
         }
 
-        let pLimit = pTypeCriticalRatio(mu: partner.star.mass / pairMass, e: partner.e) * partner.a
-        return (.circumbinary, pairMass, primary.luminosity + partner.star.luminosity,
-                pLimit, tertiaryLimit(hostMass: pairMass))
+        var layouts: [HostLayout] = []
+        let primaryZone = circumstellar(0, primary, perturberMass: partner.star.mass)
+        if hasRoom(primary, outerLimit: primaryZone.outerLimit ?? .infinity) {
+            // Wide pair: each star may keep its own planets.
+            layouts.append(primaryZone)
+            let partnerZone = circumstellar(1, partner.star, perturberMass: primary.mass)
+            if hasRoom(partner.star, outerLimit: partnerZone.outerLimit ?? .infinity) {
+                layouts.append(partnerZone)
+            }
+        } else {
+            // Close pair: planets orbit both stars.
+            let pLimit = pTypeCriticalRatio(mu: partner.star.mass / pairMass, e: partner.e) * partner.a
+            layouts.append(HostLayout(starIndices: [0, 1], type: .circumbinary, mass: pairMass,
+                                      luminosity: primary.luminosity + partner.star.luminosity,
+                                      innerLimit: pLimit, outerLimit: tertiaryLimit(hostMass: pairMass)))
+        }
+
+        // The outer star of a triple, perturbed by the inner pair as a whole.
+        if let outer = tertiary {
+            let limit = sTypeCriticalRatio(mu: pairMass / (pairMass + outer.star.mass), e: outer.e) * outer.a
+            if hasRoom(outer.star, outerLimit: limit) {
+                layouts.append(HostLayout(starIndices: [2], type: .circumstellar, mass: outer.star.mass,
+                                          luminosity: outer.star.luminosity, innerLimit: nil, outerLimit: limit))
+            }
+        }
+        return layouts
     }
+}
+
+/// A star (or close pair) that may host planets, and its band of stable orbits.
+struct HostLayout {
+    var starIndices: [Int]
+    var type: PlanetOrbitType
+    var mass: Double
+    var luminosity: Double
+    var innerLimit: Double?
+    var outerLimit: Double?
 }
