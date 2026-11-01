@@ -12,8 +12,9 @@ import SwiftUI
 
 /// Logarithmic AU axis shared by the rows and the header so they line up.
 enum OrbitScale {
-    static let range = 0.01...1000.0
-    static let decades: [Double] = [0.01, 0.1, 1, 10, 100, 1000]
+    // Down to 0.001 AU so brown dwarfs' close-in planets and habitable zones fit.
+    static let range = 0.001...1000.0
+    static let decades: [Double] = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
     static let inset: CGFloat = 12
     static let starColumnWidth: CGFloat = 76
     static let rowHeight: CGFloat = 76
@@ -27,6 +28,7 @@ enum OrbitScale {
 
     static func label(_ au: Double) -> String {
         switch au {
+        case ..<0.01: String(format: "%.3f AU", au)
         case ..<1: String(format: "%.2g AU", au)
         case ..<10: String(format: "%.1f AU", au)
         case ..<1000: String(format: "%.0f AU", au)
@@ -35,9 +37,33 @@ enum OrbitScale {
     }
 }
 
-/// Draws a star as a bright disc with a soft glow in its color.
+/// Draws a star as a bright disc with a soft glow in its color. A black hole is a dark disc
+/// inside an orange accretion glow; a pulsar adds its two radio beams.
 func drawStar(_ star: Star, at center: CGPoint, diameter: CGFloat, in context: inout GraphicsContext) {
     let color = star.color
+    if star.spectralClass == .blackHole {
+        let glow = diameter * 2.2
+        context.fill(
+            Path(ellipseIn: CGRect(x: center.x - glow / 2, y: center.y - glow / 2, width: glow, height: glow)),
+            with: .radialGradient(Gradient(colors: [color, color.opacity(0.35), color.opacity(0)]),
+                                  center: center, startRadius: diameter / 2, endRadius: glow / 2))
+        context.fill(
+            Path(ellipseIn: CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2,
+                                   width: diameter, height: diameter)),
+            with: .color(.black))
+        return
+    }
+    if star.spectralClass == .pulsar {
+        // Beams tilted off the spin axis, as from a magnetic pole.
+        let length = diameter * 3
+        let dx = length * 0.45, dy = length * 0.9
+        context.stroke(Path { $0.move(to: CGPoint(x: center.x - dx, y: center.y - dy))
+                              $0.addLine(to: CGPoint(x: center.x + dx, y: center.y + dy)) },
+                       with: .linearGradient(Gradient(colors: [color.opacity(0), color, color.opacity(0)]),
+                                             startPoint: CGPoint(x: center.x - dx, y: center.y - dy),
+                                             endPoint: CGPoint(x: center.x + dx, y: center.y + dy)),
+                       lineWidth: 1.5)
+    }
     let glow = diameter * 1.6
     context.fill(
         Path(ellipseIn: CGRect(x: center.x - glow / 2, y: center.y - glow / 2, width: glow, height: glow)),
@@ -117,9 +143,19 @@ struct SystemRow: View {
         case 1: "1 body"
         case let n: "\(n) bodies"
         }
-        return String(format: "%@%@  ·  %@  ·  host %.2f M☉ %.3g L☉  ·  %@  ·  seed %llu",
+        // The system's most Earth-like planet, wherever it orbits.
+        var habitability = ""
+        if let best = system.bestHabitabilityCandidate, best.isPotentiallyHabitable {
+            let where_ = best.host == 0 ? "" : " of "
+                + system.stars(of: system.hosts[best.host]).map(\.designation).joined(separator: " + ")
+            habitability = String(format: "  ·  habitable: planet %ld%@ (ESI %.2f)",
+                                  best.index + 1, where_, best.earthSimilarity)
+        }
+        let light = host.luminosity <= Const.minimumLuminosity
+            ? "dark" : String(format: "%.3g L☉", host.luminosity)
+        return String(format: "%@%@  ·  %@  ·  host %.2f M☉ %@  ·  %@%@  ·  seed %llu",
                       focus, stars, system.configurationLabel, host.mass,
-                      host.luminosity, bodies, system.seed)
+                      light, bodies, habitability, system.seed)
     }
 }
 
@@ -134,8 +170,23 @@ struct HostStarsView: View {
                       scale: stars.count == 2 ? 0.8 : 1, maxDiameter: 60, in: &context)
         }
         .help(stars.map { star in
-            String(format: "%@: %.2f M☉, %.2f R☉, %.0f K",
-                   star.designation, star.mass, star.radius, star.temperature)
+            if let name = star.spectralClass.remnantName {
+                let radius = star.radius * Const.solarRadiusInKM
+                if star.spectralClass == .blackHole {
+                    return String(format: "Black hole: %.1f M☉, event horizon %.0f km", star.mass, radius)
+                }
+                let kind = star.isMillisecondPulsar ? "Millisecond pulsar" : name.capitalized
+                let wind = star.spinDownLuminosity > 0
+                    ? String(format: ", wind %.3g L☉", star.spinDownLuminosity) : ""
+                return String(format: "%@ %@: %.2f M☉, %.0f km across, %.3g K%@",
+                              star.designation, kind, star.mass, 2 * radius, star.temperature, wind)
+            }
+            return star.isBrownDwarf
+                ? String(format: "%@ brown dwarf: %.0f Jupiter masses, %.3f R☉, %.0f K",
+                         star.designation, star.mass * Const.jupiterMassesPerSolarMass,
+                         star.radius, star.temperature)
+                : String(format: "%@: %.2f M☉, %.2f R☉, %.0f K",
+                         star.designation, star.mass, star.radius, star.temperature)
         }.joined(separator: "\n"))
     }
 }
@@ -170,12 +221,15 @@ struct OrbitTrack: View {
 
     static func midY(height: CGFloat) -> CGFloat { height * 0.55 }
 
-    /// Where a planet is drawn; belts get a box around their scatter of planetoids.
+    /// Where a planet is drawn; belts span their merged planetoids, at least 16 points wide.
     static func frame(of planet: Planet, in size: CGSize) -> CGRect {
         let x = OrbitScale.x(planet.a, width: size.width)
         let y = midY(height: size.height)
-        if planet.kind == .belt {
-            return CGRect(x: x - 8, y: y - 6, width: 16, height: 12)
+        if let range = planet.beltRange {
+            let lo = OrbitScale.x(range.lowerBound, width: size.width)
+            let hi = OrbitScale.x(range.upperBound, width: size.width)
+            let width = max(hi - lo, 0) + 16
+            return CGRect(x: (lo + hi) / 2 - width / 2, y: y - 6, width: width, height: 12)
         }
         // Sized by radius on a square-root scale so giants don't swamp the row.
         let d = 3 + 14 * sqrt(planet.radius / 71_492)
@@ -277,10 +331,25 @@ struct OrbitTrack: View {
                                with: .color(.white.opacity(0.18)), lineWidth: 1)
             }
 
-            // Habitable zone, inner to outer edge.
-            let zone = host.habitableZone
-            context.stroke(horizontal(zone.lowerBound, zone.upperBound),
-                           with: .color(.green), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            // Belts first, as faint bands with their planetoids, so the habitable zone and
+            // planets stay readable on top of wide debris zones.
+            for (index, planet) in host.planets.enumerated() where planet.kind == .belt {
+                let rect = Self.frame(of: planet, in: size)
+                context.fill(Path(roundedRect: rect, cornerRadius: rect.height / 2),
+                             with: .color(planet.kind.color.opacity(0.14)))
+                drawBelt(in: &context, rect: rect, color: planet.kind.color,
+                         seed: system.seed &+ UInt64(hostIndex * 1000 + index))
+            }
+
+            // Habitable zone, inner to outer edge. Quiet neutron stars and black holes have none;
+            // a pulsar's wind heats a temperate zone (though its radiation rules out life as
+            // we know it), and white dwarfs have a small, slowly shrinking one.
+            if !system.stars(of: host).contains(where: {
+                $0.spectralClass == .neutronStar || $0.spectralClass == .blackHole }) {
+                let zone = host.habitableZone
+                context.stroke(horizontal(zone.lowerBound, zone.upperBound),
+                               with: .color(.green), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            }
 
             // Edges of the dynamically stable region.
             for limit in [host.stableInnerLimit, host.stableOuterLimit].compactMap({ $0 }) {
@@ -293,6 +362,7 @@ struct OrbitTrack: View {
 
             // Other stars at their separation, with a bar from periastron to apastron,
             // and their own planets collapsed beside them.
+            var labelPositions: [CGFloat] = []
             for layout in neighborLayouts(in: size) {
                 let neighbor = layout.stars
                 let stars = neighbor.starIndices.map { system.stars[$0] }
@@ -304,21 +374,34 @@ struct OrbitTrack: View {
                     drawCollapsedPlanets(of: system.hosts[strip.hostIndex], in: strip.rect, context: &context)
                 }
                 let names = stars.map(\.designation).joined(separator: " + ")
+                // Stagger labels of companions close together, e.g. both pinned at the right edge.
+                let labelX = min(max(layout.center.x, 40), w - 40)
+                let overlaps = labelPositions.filter { abs($0 - labelX) < 80 }.count
+                labelPositions.append(labelX)
                 context.draw(Text("\(names)  \(OrbitScale.label(neighbor.a))")
                                 .font(.system(size: 9))
                                 .foregroundStyle(.white.opacity(0.7)),
-                             at: CGPoint(x: min(max(layout.center.x, 40), w - 40), y: size.height - 7))
+                             at: CGPoint(x: labelX, y: size.height - 7 - CGFloat(overlaps) * 11))
             }
 
             for (index, planet) in host.planets.enumerated() {
                 let kind = planet.kind
                 let rect = Self.frame(of: planet, in: size)
                 if kind == .belt {
-                    drawBelt(in: &context, x: rect.midX, y: rect.midY, color: kind.color,
-                             seed: system.seed &+ UInt64(hostIndex * 1000 + index))
-                } else {
-                    context.fill(Path(ellipseIn: rect), with: .color(kind.color))
-                    context.stroke(Path(ellipseIn: rect), with: .color(.black.opacity(0.4)), lineWidth: 0.5)
+                    // Drawn above; a selected belt gets an outline instead of a ring.
+                    if selectedIndex == index {
+                        context.stroke(Path(roundedRect: rect.insetBy(dx: -3, dy: -3), cornerRadius: 9),
+                                       with: .color(.white), lineWidth: 1.5)
+                    }
+                    continue
+                }
+                context.fill(Path(ellipseIn: rect), with: .color(kind.color))
+                context.stroke(Path(ellipseIn: rect), with: .color(.black.opacity(0.4)), lineWidth: 0.5)
+                if system.isPotentiallyHabitable(planet, in: host) {
+                    let halo = max(rect.width, rect.height) + 5
+                    context.stroke(Path(ellipseIn: CGRect(x: rect.midX - halo / 2, y: rect.midY - halo / 2,
+                                                          width: halo, height: halo)),
+                                   with: .color(.green), lineWidth: 1.5)
                 }
                 if selectedIndex == index {
                     let ring = max(rect.width, rect.height) + 8
@@ -330,16 +413,16 @@ struct OrbitTrack: View {
         }
     }
 
-    /// A scatter of planetoids, jittered deterministically from the system seed.
-    private func drawBelt(in context: inout GraphicsContext, x: CGFloat, y: CGFloat,
+    /// A scatter of planetoids filling the belt's span, jittered deterministically from the seed.
+    private func drawBelt(in context: inout GraphicsContext, rect: CGRect,
                           color: Color, seed: UInt64) {
         var rng = SplitMix64(seed: seed)
-        for _ in 0..<14 {
-            let dx = CGFloat.random(in: -7...7, using: &rng)
-            let dy = CGFloat.random(in: -5...5, using: &rng)
+        let count = 12 + Int(rect.width / 6)
+        for _ in 0..<count {
+            let x = CGFloat.random(in: rect.minX + 1...rect.maxX - 1, using: &rng)
+            let y = CGFloat.random(in: rect.minY + 1...rect.maxY - 1, using: &rng)
             let d = CGFloat.random(in: 1.2...2.4, using: &rng)
-            context.fill(Path(ellipseIn: CGRect(x: x + dx - d / 2, y: y + dy - d / 2,
-                                                width: d, height: d)),
+            context.fill(Path(ellipseIn: CGRect(x: x - d / 2, y: y - d / 2, width: d, height: d)),
                          with: .color(color))
         }
     }

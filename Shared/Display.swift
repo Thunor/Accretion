@@ -18,8 +18,32 @@ extension StarSystem {
         line("                         SYSTEM  CHARACTERISTICS")
         line("Seed: %llu", seed)
         func describe(_ label: String, _ s: Star) {
-            line("%@: %@, %.2f solar masses, %.4g solar luminosities, %.2f solar radii, %.0f K",
-                 label, s.designation, s.mass, s.luminosity, s.radius, s.temperature)
+            if s.isWhiteDwarf {
+                line("%@: %@, white dwarf of %.2f solar masses, radius %.0f km, %.0f K, %.3g solar luminosities",
+                     label, s.designation, s.mass, s.radius * Const.solarRadiusInKM, s.temperature, s.luminosity)
+                return
+            }
+            if let name = s.spectralClass.remnantName {
+                let radius = s.radius * Const.solarRadiusInKM
+                if s.spectralClass == .blackHole {
+                    line("%@: %@, %@ of %.2f solar masses, event horizon radius %.1f km",
+                         label, s.designation, name, s.mass, radius)
+                } else {
+                    let kind = s.isMillisecondPulsar ? "millisecond pulsar" : name
+                    line("%@: %@, %@ of %.2f solar masses, radius %.0f km, %.3g K, %.3g solar luminosities",
+                         label, s.designation, kind, s.mass, radius, s.temperature, s.luminosity)
+                    if s.spinDownLuminosity > 0 {
+                        line("   Pulsar wind %.3g solar luminosities (%.3g erg/s); planets absorb %.0f%% as heat",
+                             s.spinDownLuminosity, s.spinDownLuminosity * Const.solarLuminosityInErgs,
+                             Const.pulsarWindHeatingEfficiency * 100)
+                    }
+                }
+                return
+            }
+            line("%@: %@, %.3f solar masses, %.4g solar luminosities, %.3f solar radii, %.0f K%@",
+                 label, s.designation, s.mass, s.luminosity, s.radius, s.temperature,
+                 s.isBrownDwarf ? String(format: ", brown dwarf of %.0f Jupiter masses",
+                                         s.mass * Const.jupiterMassesPerSolarMass) : "")
         }
         describe("Primary star", primary)
         for (index, c) in companions.enumerated() {
@@ -27,7 +51,16 @@ extension StarSystem {
             line("   Orbits %@: a = %.4g AU, e = %.3f, period = %.4g days",
                  c.orbitsInnerPair ? "the inner pair" : "the primary", c.a, c.e, c.period)
         }
-        line("Total main sequence lifetime (in million yrs): %10.3f", mainSequenceLife / 1.0e6)
+        if primary.isWhiteDwarf {
+            line("Total main sequence lifetime: ended (white dwarf, cooling for %.3f million yrs)",
+                 (age - Const.whiteDwarfProgenitorLife) / 1.0e6)
+        } else if primary.isRemnant {
+            line("Total main sequence lifetime: none (stellar remnant; age is time since the supernova)")
+        } else if primary.isBrownDwarf {
+            line("Total main sequence lifetime: none (brown dwarf, cools forever)")
+        } else {
+            line("Total main sequence lifetime (in million yrs): %10.3f", mainSequenceLife / 1.0e6)
+        }
         line("Current age of stellar system (in million yrs): %10.3f", age / 1.0e6)
 
         for host in hosts {
@@ -46,15 +79,30 @@ extension StarSystem {
             line("Luminosity of central star(s) (relative to the sun): %5.4g", host.luminosity)
             line("Radius of habitable ecosphere (AU): %3.3f", host.ecosphereRadius)
             if host.planets.isEmpty { line("No planets formed.") }
-            reportPlanets(host.planets, line: line)
+            reportPlanets(host, line: line)
         }
         return out
     }
 
-    private func reportPlanets(_ planets: [Planet], line: (String, CVarArg...) -> Void) {
-        for (index, p) in planets.enumerated() {
+    private func reportPlanets(_ host: PlanetHost, line: (String, CVarArg...) -> Void) {
+        for (index, p) in host.planets.enumerated() {
             line("Planet #%ld:", index + 1)
+            if let range = p.beltRange {
+                if p.beltBodyCount == 1 {
+                    line("Lone planetoid at %.3f AU, mass %.4f Earth masses",
+                         range.lowerBound, p.mass * Const.earthMassesPerSolarMass)
+                } else {
+                    line("Planetoid belt of %ld bodies, %.3f to %.3f AU, total mass %.4f Earth masses",
+                         p.beltBodyCount, range.lowerBound, range.upperBound,
+                         p.mass * Const.earthMassesPerSolarMass)
+                }
+                continue
+            }
             if p.isGasGiant { line("Gas giant...") }
+            if p.isRocky {
+                line("   Earth Similarity Index: %4.2f%@", p.earthSimilarity,
+                     isPotentiallyHabitable(p, in: host) ? "     POTENTIALLY HABITABLE" : "")
+            }
             if p.resonantPeriod { line("In resonant period with primary.") }
             line("   Distance from its star(s) (in A.U.): %7.3f", p.a)
             line("   Eccentricity of orbit: %5.3f", p.e)

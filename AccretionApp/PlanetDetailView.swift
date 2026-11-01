@@ -37,7 +37,68 @@ struct PlanetDetailView: View {
                     .foregroundStyle(.orange)
             }
 
+            if let range = planet.beltRange {
+                beltDetails(range)
+            } else {
+                planetDetails
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A belt merges several planetoids, so it gets totals and averages instead of a body.
+    private func beltDetails(_ range: ClosedRange<Double>) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+            section("Orbit")
+            row("Orbits", system.stars(of: host).map(\.designation).joined(separator: " + "))
+            row("Extent", String(format: "%.3f – %.3f AU", range.lowerBound, range.upperBound))
+            row("Mean distance", String(format: "%.3f AU", planet.a))
+            row("Mean eccentricity", String(format: "%.3f", planet.e))
+            row("Year at mean distance", String(format: "%.2f days", planet.orbitalPeriod))
+
+            section("Belt")
+            row("Planetoids merged", "\(planet.beltBodyCount)")
+            row("Total mass", String(format: "%.4f Earth masses", earthMasses))
+            row("Typical temperature", celsius(planet.surfaceTemp))
+        }
+        .font(.callout.monospacedDigit())
+    }
+
+    /// Why a rocky planet can or can't support life as we know it: the first failed test.
+    private var habitabilityVerdict: String {
+        let atmospheres = planet.surfacePressure / Const.earthSurfPresInMillibars
+        let celsius = planet.surfaceTemp - Const.kelvinCelsiusDifference
+        if system.isPotentiallyHabitable(planet, in: host) { return "Potentially habitable" }
+        if system.hasIonizingHost(host) {
+            return planet.isPotentiallyHabitable(systemAge: system.age)
+                ? "Temperate, but bathed in X-rays and particles" : "Bathed in X-rays and particles"
+        }
+        if !Habitability.massRange.contains(earthMasses) {
+            return earthMasses < Habitability.massRange.lowerBound
+                ? "Too small to hold an atmosphere" : "Too massive (likely a mini-Neptune)"
+        }
+        if planet.greenhouseEffect && planet.surfacePressure > 0 { return "Runaway greenhouse" }
+        if atmospheres < Habitability.pressureRange.lowerBound { return "Atmosphere too thin" }
+        if !planet.hasLiquidWater {
+            return celsius < 0 ? "Frozen, no liquid water" : celsius > 100 ? "Too hot for liquid water" : "No surface water"
+        }
+        if !Habitability.temperatureRange.contains(planet.surfaceTemp) {
+            return celsius < 0 ? "Too cold" : "Too hot for most Earth life"
+        }
+        if atmospheres > Habitability.pressureRange.upperBound { return "Atmosphere too dense" }
+        return String(format: "System too young (%.0f Myr)", system.age / 1.0e6)
+    }
+
+    private var planetDetails: some View {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                if planet.isRocky {
+                    section("Habitability")
+                    row("Verdict", habitabilityVerdict)
+                    row("Earth Similarity", String(format: "%.2f (Earth = 1)", planet.earthSimilarity))
+                    row("Liquid water", planet.hasLiquidWater ? "Yes" : "No")
+                }
+
                 section("Orbit")
                 row("Orbits", system.stars(of: host).map(\.designation).joined(separator: " + "))
                 row("Distance", String(format: "%.3f AU", planet.a))
@@ -67,15 +128,13 @@ struct PlanetDetailView: View {
                 }
             }
             .font(.callout.monospacedDigit())
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var earthMasses: Double { planet.mass * Const.earthMassesPerSolarMass }
 
     private var badges: [String] {
         var result: [String] = []
+        if system.isPotentiallyHabitable(planet, in: host) { result.append("Potentially habitable") }
         if host.habitableZone.contains(planet.a) { result.append("In habitable zone") }
         if planet.greenhouseEffect && planet.surfacePressure > 0 { result.append("Runaway greenhouse") }
         if planet.resonantPeriod { result.append("Spin–orbit resonance") }

@@ -11,8 +11,6 @@ import SwiftUI
 enum PlanetKind: CaseIterable {
     case belt, rock, hothouse, desert, terrestrial, ocean, ice, iceGiant, gasGiant
 
-    /// Rocky bodies lighter than this (Earth masses) are drawn as planetoid belts.
-    static let beltMassLimit = 0.01
     /// Gas giants lighter than this (Earth masses) are drawn as ice giants.
     static let iceGiantMassLimit = 25.0
 
@@ -20,10 +18,11 @@ enum PlanetKind: CaseIterable {
         let earthMasses = p.mass * Const.earthMassesPerSolarMass
         let atmospheres = p.surfacePressure / Const.earthSurfPresInMillibars
 
-        if p.isGasGiant {
-            self = earthMasses < Self.iceGiantMassLimit ? .iceGiant : .gasGiant
-        } else if earthMasses < Self.beltMassLimit {
+        // Belts are formed by the generator (see `Const.beltMassLimit`).
+        if p.isBelt {
             self = .belt
+        } else if p.isGasGiant {
+            self = earthMasses < Self.iceGiantMassLimit ? .iceGiant : .gasGiant
         } else if p.surfacePressure <= 0.0 {
             self = .rock
         } else if p.greenhouseEffect {
@@ -74,11 +73,17 @@ extension Planet {
 }
 
 extension Star {
-    /// Star color, interpolated along approximate blackbody colors.
-    var color: Color { Self.color(temperature: temperature) }
+    /// Star color, interpolated along approximate blackbody colors; remnants use their class color.
+    var color: Color { isRemnant ? spectralClass.color : Self.color(temperature: temperature) }
 
     static func color(temperature: Double) -> Color {
+        // Below ~2500 K: deep red L dwarfs, then the magenta of T dwarfs (sodium and potassium
+        // absorb the yellow-green), fading to the dim purple of Y dwarfs.
         let stops: [(t: Double, r: Double, g: Double, b: Double)] = [
+            (300, 0.38, 0.16, 0.36),
+            (800, 0.62, 0.22, 0.48),
+            (1300, 0.80, 0.24, 0.30),
+            (1900, 0.92, 0.30, 0.16),
             (2500, 1.00, 0.42, 0.20),
             (3500, 1.00, 0.58, 0.32),
             (4500, 1.00, 0.74, 0.45),
@@ -101,14 +106,30 @@ extension Star {
 
     /// Display diameter (points). Radii span ~0.1 to ~10 solar radii, so this uses a
     /// cube-root scale: still ordered by size, but red dwarfs stay visible and O stars fit.
-    var displayDiameter: CGFloat { min(28 * cbrt(radius), 60) }
+    /// Remnants are only tens of kilometres across, so they get fixed, readable sizes.
+    var displayDiameter: CGFloat {
+        switch spectralClass {
+        case .neutronStar, .pulsar: 7
+        case .blackHole: 14
+        default: min(28 * cbrt(radius), 60)
+        }
+    }
 }
 
 extension SpectralClass {
-    /// Color at the middle of the class's temperature range, for the legend.
+    /// Color at the middle of the class's temperature range, for the legend. Remnants get
+    /// fixed colors: neutron stars blue-white (hot surfaces), pulsars cyan, black holes the
+    /// orange of an accretion glow around a dark centre.
     var color: Color {
-        let range = temperatureRange
-        return Star.color(temperature: (range.lowerBound + range.upperBound) / 2)
+        switch self {
+        case .whiteDwarf: return Color(red: 0.92, green: 0.95, blue: 1.00)
+        case .neutronStar: return Color(red: 0.78, green: 0.86, blue: 1.00)
+        case .pulsar: return Color(red: 0.45, green: 0.95, blue: 1.00)
+        case .blackHole: return Color(red: 1.00, green: 0.55, blue: 0.20)
+        default:
+            let range = temperatureRange
+            return Star.color(temperature: (range.lowerBound + range.upperBound) / 2)
+        }
     }
 }
 

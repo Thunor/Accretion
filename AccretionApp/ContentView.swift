@@ -14,19 +14,30 @@ struct PlanetReference: Equatable {
     let index: Int
 }
 
+enum SystemSortOrder: String, CaseIterable, Identifiable {
+    case generated = "Generated"
+    case habitability = "Habitability"
+    var id: Self { self }
+}
+
 struct ContentView: View {
     @State private var catalog = SystemCatalog()
     @State private var count = 10
+    @State private var sortOrder = SystemSortOrder.generated
     @State private var selectedPlanet: PlanetReference?
 
     private let counts = [1, 10, 100, 1000]
+
+    private var displayedSystems: [StarSystem] {
+        sortOrder == .habitability ? catalog.systemsByHabitability : catalog.systems
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
                     Section {
-                        ForEach(catalog.systems) { system in
+                        ForEach(displayedSystems) { system in
                             SystemRow(system: system,
                                       selectedPlanet: selectedPlanet?.systemID == system.id
                                           ? selectedPlanet : nil,
@@ -56,7 +67,7 @@ struct ContentView: View {
                 LegendView()
                 Spacer()
                 if let duration = catalog.lastDuration {
-                    Text("\(catalog.systems.count) systems in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))")
+                    Text("\(catalog.habitableSystemCount) potentially habitable  ·  \(catalog.systems.count) systems in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .fixedSize()
@@ -73,6 +84,13 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Picker("Sort", systemImage: "arrow.up.arrow.down", selection: $sortOrder) {
+                    ForEach(SystemSortOrder.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .help("Sort systems")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Generate", systemImage: "sparkles") {
@@ -138,6 +156,10 @@ struct LegendView: View {
         HStack(spacing: 4) {
             Rectangle().fill(.orange).frame(width: 1.5, height: 12)
             Text("Stability limit")
+        }
+        HStack(spacing: 4) {
+            Circle().strokeBorder(.green, lineWidth: 1.5).frame(width: 11, height: 11)
+            Text("Potentially habitable")
         }
     }
 }

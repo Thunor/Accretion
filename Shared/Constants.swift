@@ -51,7 +51,64 @@ enum Const {
     static let j = 1.46e-19                         // day-length calcs (cm2/sec2 g)
     static let incrediblyLargeNumber = 9.9999e37
     static let solarRadiusInAU = 0.00465047
-    static let tripleFraction = 0.25                // share of multiples that are triples
+
+    // Brown dwarfs
+    static let hydrogenBurningLimit = 0.075         // solar masses; below this, a brown dwarf
+    static let deuteriumBurningLimit = 0.013        // solar masses (~13 Jupiter masses)
+    /// Brown-dwarf mass function dN/dM ∝ M^-α (Kirkpatrick et al. 2021 find α ≈ 0.6).
+    static let brownDwarfMassFunctionSlope = 0.6
+    /// Brown dwarfs drawn per 100 stars: about one for every 4.5 stars in the solar
+    /// neighbourhood (Kirkpatrick et al. 2019, 2021).
+    static let brownDwarfWeight = 22.0
+    static let jupiterMassesPerSolarMass = 1047.6
+
+    // Stellar remnants. The Milky Way holds ~10¹¹ stars, ~10⁹ neutron stars and ~10⁸
+    // stellar-mass black holes (Timmes, Woosley & Weaver 1996; Olejak et al. 2020).
+    static let neutronStarWeight = 1.0              // per 100 stars: about 1 in 100
+    static let blackHoleWeight = 0.1                // per 100 stars: about 1 in 1000
+    /// A neutron star spins down below the pulsar "death line" after ~10 Myr; younger ones
+    /// still pulse. With ages spread over 10 Gyr that is ~1 in 1000 neutron stars, in line
+    /// with ~10⁶ active pulsars in the Galaxy (Faucher-Giguère & Kaspi 2006).
+    static let pulsarLifetime = 1.0e7               // years
+    static let neutronStarRadius = 12.0             // km
+    static let schwarzschildRadiusPerSolarMass = 2.953 // km
+    static let solarRadiusInKM = 695_700.0
+    /// Planets are known around only a handful of the ~3000 catalogued pulsars
+    /// (PSR B1257+12, the first exoplanets found, in 1992). They form from a fallback disk
+    /// within about 1 AU; black holes get none.
+    static let neutronStarPlanetChance = 0.005
+    static let fallbackDiskRange = 0.1...1.0        // AU
+    /// Remnants are nearly dark; this floor keeps the environment maths finite.
+    static let minimumLuminosity = 1.0e-12
+
+    // Pulsar winds. Spin-down power fades as Ė₀ / (1 + t/τ₀)² for a magnetic dipole;
+    // millisecond pulsars, spun back up by a companion, hold ~10³⁴ erg/s for billions of years.
+    static let solarLuminosityInErgs = 3.828e33     // erg/s
+    static let pulsarInitialSpinDown = 1.0e38       // erg/s
+    static let pulsarSpinDownTimescale = 1.0e3      // years
+    static let millisecondPulsarSpinDown = 1.0e34   // erg/s, typical
+    /// Recycled millisecond pulsars: ~10⁵ in the Galaxy for ~10⁹ neutron stars.
+    static let millisecondPulsarFraction = 1.0e-4
+    /// Share of the wind's power a planet absorbs as heat. Much of it is particles and
+    /// gamma rays, so this is uncertain (Patruno & Kama 2017 explore similar factors).
+    static let pulsarWindHeatingEfficiency = 0.1
+
+    // White dwarfs: about 7 per 100 main-sequence stars nearby (RECONS 10-pc census,
+    // Henry et al. 2018; Hollands et al. 2018 20-pc sample).
+    static let whiteDwarfWeight = 7.0
+    static let chandrasekharMass = 1.44
+    static let whiteDwarfMinimumTemperature = 3500.0  // K
+    /// Typical progenitor lifetime before a white dwarf forms (years); the system's age is
+    /// this plus the white dwarf's cooling age.
+    static let whiteDwarfProgenitorLife = 1.0e9
+    /// Planets this close were engulfed when the star swelled into a red giant and AGB star;
+    /// survivors' orbits widened as it lost mass (Mustill & Villaver 2012).
+    static let whiteDwarfClearedRadius = 3.0        // AU
+    /// Oldest system age (years); ages are uniform up to this, a constant star-formation history.
+    static let maximumSystemAge = 1.0e10
+    /// Rocky bodies lighter than this (Earth masses) are planetoids. Neighbouring planetoids
+    /// are merged into one belt; raise or lower this to get more or fewer belts.
+    static let beltMassLimit = 0.01
 
     // Kothari radius (cgs units)
     static let a1_20 = 6.485e12
