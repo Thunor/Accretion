@@ -114,6 +114,7 @@ final class StarSystemGenerator {
         let finished = mergeBelts(bodies).map { planet -> Planet in
             var p = planet
             computeEnvironment(&p)
+            p.moons = distributeMoonMasses(for: p, stellarMass: stellarMassRatio)
             return p
         }
         return PlanetHost(starIndices: layout.starIndices,

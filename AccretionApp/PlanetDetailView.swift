@@ -125,6 +125,13 @@ struct PlanetDetailView: View {
                     row("Hydrosphere", percent(planet.hydrosphere))
                     row("Cloud cover", percent(planet.cloudCover))
                     row("Ice cover", percent(planet.iceCover))
+
+                    if !planet.moons.isEmpty {
+                        section("Moons")
+                        ForEach(Array(planet.moons.enumerated()), id: \.offset) { idx, moon in
+                            row("Moon \(idx + 1)", String(format: "%.2f Earth masses", moon.mass * Const.earthMassesPerSolarMass))
+                        }
+                    }
                 }
             }
             .font(.callout.monospacedDigit())

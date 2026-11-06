@@ -621,3 +621,5 @@ Seeds to try with the CLI (`-s`):
 13. Added white dwarfs (mass–radius relation, Mestel cooling, DA/DC classes, engulfed inner
     planets), millisecond pulsars, and pulsar-wind heating of planets; radiation rules out
     habitability around neutron stars.
+14. Fixed a build error in `PlanetDetailView`: the moons list now uses `ForEach` instead of a
+    `for` loop inside the view builder.

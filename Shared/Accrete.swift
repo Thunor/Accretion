@@ -220,7 +220,7 @@ extension StarSystemGenerator {
 
             if dustAvailable(innerEffectLimit(a, e, mass), outerEffectLimit(a, e, mass)) {
                 trace(".. Injecting protoplanet.")
-                dustDensity = Const.dustDensityCoeff * sqrt(stellarMassRatio)
+                dustDensity = Const.dustDensityCoeff * pow(stellarMassRatio, 0.3)
                     * exp(-Const.alpha * pow(a, 1.0 / Const.n))
                 let critMass = criticalLimit(a, e, stellarLuminosityRatio)
                 accreteDust(&mass, a: a, e: e, critMass: critMass,
@@ -238,6 +238,32 @@ extension StarSystemGenerator {
         return planets
     }
 
-    /// Stub in the original (always returns no moons).
-    func distributeMoonMasses() -> [Planet] { [] }
+    /// Generates a set of moons for a given planet.
+    func distributeMoonMasses(for planet: Planet, stellarMass: Double) -> [Planet] {
+        guard !planet.isGasGiant, planet.mass > 0 else { return [] }
+        
+        let numMoons = Int(randomNumber(0, 4))
+        if numMoons == 0 { return [] }
+        
+        // Hill sphere: R_H = a * (m / 3M)^(1/3)
+        let hillSphere = planet.a * pow(planet.mass / (3.0 * stellarMass), 1.0/3.0)
+        let maxMoonA = max(hillSphere * 0.5, 0.0001)
+        
+        var moons: [Planet] = []
+        for _ in 0..<numMoons {
+            var moon = Planet()
+            moon.a = randomNumber(0.0001, maxMoonA)
+            moon.mass = planet.mass * randomNumber(1e-5, 1e-3)
+            moon.isGasGiant = false
+            
+            let originalRatio = self.stellarMassRatio
+            self.stellarMassRatio = planet.mass
+            computeEnvironment(&moon)
+            self.stellarMassRatio = originalRatio
+            
+            moons.append(moon)
+        }
+        
+        return moons.sorted(by: { $0.a < $1.a })
+    }
 }
