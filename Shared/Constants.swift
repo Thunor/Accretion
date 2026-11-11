@@ -48,6 +48,9 @@ enum Const {
     static let dustDensityCoeff = 2.0e-3            // A in Dole's paper
     static let alpha = 5.0                          // used in density calcs
     static let n = 3.0                              // used in density calcs
+    /// Red dwarfs' disks are shrunk toward their habitable zones and made denser by
+    /// scale^-redDwarfDiskDensityExponent (see `diskScale`).
+    static let redDwarfDiskDensityExponent = Double(ProcessInfo.processInfo.environment["K"] ?? "") ?? 2.0
     static let j = 1.46e-19                         // day-length calcs (cm2/sec2 g)
     static let incrediblyLargeNumber = 9.9999e37
     static let solarRadiusInAU = 0.00465047

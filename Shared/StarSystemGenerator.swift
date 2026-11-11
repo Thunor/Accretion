@@ -30,6 +30,7 @@ final class StarSystemGenerator {
     var reducedMass = 0.0
     var dustDensity = 0.0
     var cloudEccentricity = 0.2
+    var diskScale = 1.0
 
     init(seed: UInt64? = nil, verbose: Bool = false) {
         let s = seed ?? UInt64.random(in: .min ... .max)
@@ -99,6 +100,7 @@ final class StarSystemGenerator {
         stellarLuminosityRatio = layout.luminosity
         rEcosphere = sqrt(stellarLuminosityRatio)
         rGreenhouse = rEcosphere * Const.greenhouseEffectConst
+        diskScale = diskScale(mass: stellarMassRatio, luminosity: stellarLuminosityRatio)
 
         // Clear the disk inside a circumbinary stability limit and truncate it outside
         // a companion's, so planets only form on stable orbits.

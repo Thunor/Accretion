@@ -27,6 +27,25 @@ extension StarSystemGenerator {
     }
     func outermostPlanet(_ stellarMass: Double) -> Double { 50.0 * pow(stellarMass, 1.0 / 3.0) }
 
+    /// Dole's dust profile is fixed in AU, so a red dwarf's habitable zone (0.02–0.2 AU) sits
+    /// where there is too little dust to build anything heavier than a planetoid. Red dwarfs'
+    /// disks are compact, and they host many Earth-sized planets in and near their habitable
+    /// zones (TRAPPIST-1, Proxima Centauri b; Dressing & Charbonneau 2015). Below the K/M
+    /// boundary the profile is shrunk with the ecosphere relative to that boundary star, and
+    /// the density raised to compensate. Returns 1 for brighter stars and for brown dwarfs.
+    func diskScale(mass: Double, luminosity: Double) -> Double {
+        let boundary = ProcessInfo.processInfo.environment["B"].flatMap(Double.init) ?? SpectralClass.M.massRange.upperBound
+        guard mass >= Const.hydrogenBurningLimit, mass < boundary else { return 1.0 }
+        return min(sqrt(luminosity), 1.0)
+    }
+
+    /// Dole's dust density at `a` AU, with the radial profile scaled by `diskScale`.
+    func dustDensity(at a: Double) -> Double {
+        Const.dustDensityCoeff * pow(stellarMassRatio, 0.3)
+            * pow(diskScale, -Const.redDwarfDiskDensityExponent)
+            * exp(-Const.alpha * pow(a / diskScale, 1.0 / Const.n))
+    }
+
     func innerEffectLimit(_ a: Double, _ e: Double, _ mass: Double) -> Double {
         a * (1.0 - e) * (1.0 - mass) / (1.0 + cloudEccentricity)
     }
@@ -137,7 +156,8 @@ extension StarSystemGenerator {
 
     /// Mass (solar masses) at which a planet begins to accrete gas as well as dust.
     func criticalLimit(_ orbitalRadius: Double, _ eccentricity: Double, _ luminosity: Double) -> Double {
-        let perihelion = orbitalRadius - orbitalRadius * eccentricity
+        var perihelion = orbitalRadius - orbitalRadius * eccentricity
+        if ProcessInfo.processInfo.environment["G"] != nil { perihelion /= diskScale }
         return Const.critMassB * pow(perihelion * sqrt(luminosity), -0.75)
     }
 
@@ -220,8 +240,7 @@ extension StarSystemGenerator {
 
             if dustAvailable(innerEffectLimit(a, e, mass), outerEffectLimit(a, e, mass)) {
                 trace(".. Injecting protoplanet.")
-                dustDensity = Const.dustDensityCoeff * pow(stellarMassRatio, 0.3)
-                    * exp(-Const.alpha * pow(a, 1.0 / Const.n))
+                dustDensity = dustDensity(at: a)
                 let critMass = criticalLimit(a, e, stellarLuminosityRatio)
                 accreteDust(&mass, a: a, e: e, critMass: critMass,
                             bodyInnerBound: innerBound, bodyOuterBound: outerBound)
